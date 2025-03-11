@@ -1,8 +1,13 @@
 import streamlit as st
 import google.generativeai as genai
 from dotenv import load_dotenv
+import firebase_admin
+from firebase_admin import credentials, firestore
 import os
 
+st.set_page_config(page_title="SmartSupport AI - Aritti", page_icon="🛍️", layout="centered")
+
+# Cargar variables de entorno
 load_dotenv()
 
 # Configurar la API de Gemini
@@ -14,11 +19,59 @@ if not GEMINI_API_KEY:
 genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel("gemini-1.5-pro")
 
-# Configurar la app en Streamlit
-st.set_page_config(page_title="SmartSupport AI - Aritti", page_icon="🛍️", layout="centered")
+# Configurar Firebase
+firebase_credentials_path = os.getenv("FIREBASE_CREDENTIALS")
+cred = credentials.Certificate(firebase_credentials_path)
+if not firebase_admin._apps:
+    firebase_admin.initialize_app(cred)
+db = firestore.client()
 
+# Obtener productos desde Firebase
+@st.cache_data
+def obtener_productos():
+    productos_ref = db.collection("productosRopa")
+    docs = productos_ref.stream()
+    return [doc.to_dict() for doc in docs]
+
+productos = obtener_productos()
+
+# Función para verificar stock
+def obtener_stock(producto_buscado):
+    productos_ref = db.collection("productosRopa")  # Asegúrate de que la colección es la correcta
+    query = productos_ref.where("title", "==", producto_buscado).stream()
+    
+    stock_total = sum([int(doc.to_dict().get("stock", 0)) for doc in query])  # Convertir stock a entero
+    return stock_total
+
+
+
+# Generar contexto para el chatbot
+productos_texto = "\n".join([f"{p['title']} - {p['price']} - Stock: {p.get('stock', 'N/A')}" for p in productos])
+
+prompt_inicial = f"""
+Eres un asistente virtual exclusivo de **Aritti**, una tienda de ropa online. 
+Tu objetivo es responder preguntas de clientes sobre:
+
+- Disponibilidad de productos y stock.
+- Precios y características de los artículos.
+- Tiempos de envío y política de cambios.
+
+Aquí tienes información actualizada de los productos en stock:
+
+{productos_texto}
+
+Si un cliente pregunta por un producto específico, revisa la información proporcionada y responde con datos precisos. 
+Si un producto está agotado, informa al cliente y sugiere opciones similares. No hagas preguntas innecesarias.
+"""
+
+# Configurar la app en Streamlit
 st.title("🛍️ SmartSupport AI para Aritti")
 st.write("Bienvenido! Soy tu asistente virtual y estoy aquí para ayudarte con tus dudas sobre talles, disponibilidad de productos, envíos y cambios.")
+
+# Mostrar productos disponibles
+if st.checkbox("📦 Ver productos disponibles"):
+    for producto in productos:
+        st.write(f"**{producto['title']}** - {producto['price']} - Stock: {producto.get('stock', 'Desconocido')}")
 
 # 📌 Preguntas Frecuentes
 with st.expander("📌 Preguntas Frecuentes"):
@@ -36,23 +89,10 @@ with st.expander("📌 Preguntas Frecuentes"):
     - ¡Sí! Pregunta en el chat para conocer nuestras ofertas actuales.
     """)
 
-# Prompt personalizado para el chatbot
-prompt_inicial = """
-Eres un asistente virtual especializado en atención al cliente para Aritti, una tienda ecommerce de ropa.
-Tu tarea es responder preguntas frecuentes de los clientes de manera clara y precisa, ofreciendo información relevante sobre:
-- Talles de ropa y recomendaciones de ajuste.
-- Disponibilidad de productos en el catálogo.
-- Tiempos de envío según ubicación del cliente.
-- Políticas de cambio y devolución.
-
-Asegúrate de proporcionar respuestas detalladas y útiles. Si no tienes información sobre una consulta específica, sugiere al cliente visitar la web oficial o contactar con soporte humano.
-"""
-
 # Historial de chat (para mantener conversaciones previas)
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 
-# Mostrar historial
 for chat in st.session_state.chat_history:
     with st.chat_message(chat["role"]):
         st.markdown(chat["content"])
@@ -64,14 +104,34 @@ if user_input:
     with st.chat_message("user"):
         st.markdown(user_input)
     
-    try:
-        # Llamada a Gemini AI
-        mensaje_completo = f"{prompt_inicial}\n\nCliente: {user_input}\nAsistente:"
-        response = model.generate_content(mensaje_completo)
-        bot_response = response.text if hasattr(response, "text") else "No tengo una respuesta en este momento."
-    
-    except Exception as e:
-        bot_response = f"❌ Error en la IA: {str(e)}"
+    user_input_lower = user_input.lower()  # Asegurar que solo se define si hay entrada
+    bot_response = ""
+
+    # Si el usuario pregunta por stock, buscar en Firebase
+    if "stock" in user_input_lower:
+        producto_buscado = None
+        for producto in productos:
+            if producto["title"].lower() in user_input_lower:
+                producto_buscado = producto["title"]
+                break
+        
+        if producto_buscado:
+            stock_disponible = obtener_stock(producto_buscado)
+            if stock_disponible > 0:
+                bot_response = f"Actualmente, tenemos **{stock_disponible} unidades** del **{producto_buscado}** en stock."
+            else:
+                bot_response = f"Lo siento, el **{producto_buscado}** está agotado en este momento."
+        else:
+            bot_response = "No encontré ese producto en nuestro catálogo. Por favor, revisa nuestra web para más detalles."
+
+    # Si no es una pregunta sobre stock, procesar con IA
+    else:
+        try:
+            mensaje_completo = f"{prompt_inicial}\n\nCliente: {user_input}\nAsistente:"
+            response = model.generate_content(mensaje_completo)
+            bot_response = response.text if hasattr(response, "text") else "No tengo una respuesta en este momento."
+        except Exception as e:
+            bot_response = f"❌ Error en la IA: {str(e)}"
     
     with st.chat_message("assistant"):
         st.markdown(bot_response)
