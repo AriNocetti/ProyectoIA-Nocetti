@@ -35,19 +35,22 @@ def obtener_productos():
 
 productos = obtener_productos()
 
-# Función para verificar stock
-def obtener_stock(producto_buscado):
-    productos_ref = db.collection("productosRopa")  # Asegúrate de que la colección es la correcta
-    query = productos_ref.where("title", "==", producto_buscado).stream()
+# Generar contexto detallado de los productos
+productos_texto = "\n".join([
+    f"{p['title']} - {p['price']} - Stock: {p.get('stock', 'N/A')} - Categoría: {p.get('category', 'N/A')} - "
+    f"Color: {p.get('color', 'N/A')} - Material: {p.get('fabric', 'N/A')} - Talles: {', '.join(p.get('size', []))}"
+    for p in productos
+])
+
+# # Función para verificar stock
+# def obtener_stock(producto_buscado):
+#     productos_ref = db.collection("productosRopa")  # Asegúrate de que la colección es la correcta
+#     query = productos_ref.where("title", "==", producto_buscado).stream()
     
-    stock_total = sum([int(doc.to_dict().get("stock", 0)) for doc in query])  # Convertir stock a entero
-    return stock_total
+#     stock_total = sum([int(doc.to_dict().get("stock", 0)) for doc in query])  # Convertir stock a entero
+#     return stock_total
 
-
-
-# Generar contexto para el chatbot
-productos_texto = "\n".join([f"{p['title']} - {p['price']} - Stock: {p.get('stock', 'N/A')}" for p in productos])
-
+# Prompt inicial mejorado
 prompt_inicial = f"""
 Eres un asistente virtual exclusivo de **Aritti**, una tienda de ropa online. 
 Tu objetivo es responder preguntas de clientes sobre:
@@ -63,6 +66,12 @@ Aquí tienes información actualizada de los productos en stock:
 Si un cliente pregunta por un producto específico, revisa la información proporcionada y responde con datos precisos. 
 Si un producto está agotado, informa al cliente y sugiere opciones similares. No hagas preguntas innecesarias.
 """
+# Función para verificar stock
+def obtener_stock(producto_buscado):
+    productos_ref = db.collection("productosRopa")
+    query = productos_ref.where("title", "==", producto_buscado).stream()
+    stock_total = sum([int(doc.to_dict().get("stock", 0)) for doc in query])
+    return stock_total
 
 # Configurar la app en Streamlit
 st.title("🛍️ SmartSupport AI para Aritti")
@@ -71,7 +80,9 @@ st.write("Bienvenido! Soy tu asistente virtual y estoy aquí para ayudarte con t
 # Mostrar productos disponibles
 if st.checkbox("📦 Ver productos disponibles"):
     for producto in productos:
-        st.write(f"**{producto['title']}** - {producto['price']} - Stock: {producto.get('stock', 'Desconocido')}")
+        st.write(f"**{producto['title']}** - {producto['price']} - Stock: {producto.get('stock', 'Desconocido')} - "
+                f"Categoría: {producto.get('category', 'N/A')} - Color: {producto.get('color', 'N/A')} - "
+                f"Material: {producto.get('fabric', 'N/A')} - Talles: {', '.join(producto.get('size', []))}")
 
 # 📌 Preguntas Frecuentes
 with st.expander("📌 Preguntas Frecuentes"):
@@ -109,12 +120,7 @@ if user_input:
 
     # Si el usuario pregunta por stock, buscar en Firebase
     if "stock" in user_input_lower:
-        producto_buscado = None
-        for producto in productos:
-            if producto["title"].lower() in user_input_lower:
-                producto_buscado = producto["title"]
-                break
-        
+        producto_buscado = next((p["title"] for p in productos if p["title"].lower() in user_input_lower), None)
         if producto_buscado:
             stock_disponible = obtener_stock(producto_buscado)
             if stock_disponible > 0:
