@@ -1,14 +1,12 @@
 import streamlit as st
-import json
 import google.generativeai as genai
 from dotenv import load_dotenv
 import firebase_admin
 from firebase_admin import credentials, firestore
 import os
-import subprocess
 
 # Cargar credenciales desde Streamlit Secrets
-firebase_config = json.loads(st.secrets["FIREBASE"])
+firebase_config = st.secrets["FIREBASE"] 
 cred = credentials.Certificate(firebase_config)
 
 if not firebase_admin._apps:
