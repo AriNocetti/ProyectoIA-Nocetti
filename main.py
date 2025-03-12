@@ -8,7 +8,7 @@ import os
 import subprocess
 
 # Cargar credenciales desde Streamlit Secrets
-firebase_config = json.loads(st.secrets["firebase"])
+firebase_config = json.loads(st.secrets["FIREBASE"])
 cred = credentials.Certificate(firebase_config)
 
 if not firebase_admin._apps:
