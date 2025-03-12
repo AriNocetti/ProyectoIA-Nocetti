@@ -1,9 +1,17 @@
 import streamlit as st
 import google.generativeai as genai
 from dotenv import load_dotenv
-import firebase_admin
 from firebase_admin import credentials, firestore
+
 import os
+import subprocess
+
+# Instalar firebase-admin si no está instalado
+try:
+    import firebase_admin
+except ModuleNotFoundError:
+    subprocess.run(["pip", "install", "firebase-admin"])
+    import firebase_admin
 
 st.set_page_config(page_title="SmartSupport AI - Aritti", page_icon="🛍️", layout="centered")
 
